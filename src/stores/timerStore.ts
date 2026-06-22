@@ -1,20 +1,136 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 export type TimerMode = 'work' | 'break'
 
+const DEFAULT_WORK_MINUTES = 25
+const DEFAULT_BREAK_MINUTES = 5
+const MIN_MINUTES = 1
+const MAX_MINUTES = 60
+
+const STORAGE_KEY_SETTINGS = 'pomodoro:settings'
+const STORAGE_KEY_STATS = 'pomodoro:stats'
+
+function getTodayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function clampMinutes(v: number): number {
+  return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, Math.floor(v)))
+}
+
+interface StoredSettings {
+  workMinutes: number
+  breakMinutes: number
+}
+
+interface StoredStats {
+  date: string
+  completed: number
+}
+
+function loadSettings(): StoredSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SETTINGS)
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredSettings
+      return {
+        workMinutes: clampMinutes(parsed.workMinutes ?? DEFAULT_WORK_MINUTES),
+        breakMinutes: clampMinutes(parsed.breakMinutes ?? DEFAULT_BREAK_MINUTES),
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return { workMinutes: DEFAULT_WORK_MINUTES, breakMinutes: DEFAULT_BREAK_MINUTES }
+}
+
+function loadStats(): StoredStats {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_STATS)
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredStats
+      if (parsed.date === getTodayStr()) {
+        return { date: parsed.date, completed: Math.max(0, parsed.completed ?? 0) }
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return { date: getTodayStr(), completed: 0 }
+}
+
 export const useTimerStore = defineStore('timer', () => {
-  const WORK_DURATION = 25 * 60
-  const BREAK_DURATION = 5 * 60
+  const initialSettings = loadSettings()
+  const initialStats = loadStats()
+
+  const workMinutes = ref(initialSettings.workMinutes)
+  const breakMinutes = ref(initialSettings.breakMinutes)
+
+  const workDurationSeconds = computed(() => workMinutes.value * 60)
+  const breakDurationSeconds = computed(() => breakMinutes.value * 60)
 
   const mode = ref<TimerMode>('work')
-  const remainingSeconds = ref(WORK_DURATION)
+  const remainingSeconds = ref(workDurationSeconds.value)
   const isRunning = ref(false)
   const isFinished = ref(false)
+
+  const statsDate = ref(initialStats.date)
+  const todayCompleted = ref(initialStats.completed)
 
   let intervalId: ReturnType<typeof setInterval> | null = null
   let startTimestamp: number | null = null
   let startRemaining: number = 0
+
+  function ensureTodayStats() {
+    const today = getTodayStr()
+    if (statsDate.value !== today) {
+      statsDate.value = today
+      todayCompleted.value = 0
+      saveStats()
+    }
+  }
+
+  function saveSettings() {
+    try {
+      const data: StoredSettings = {
+        workMinutes: workMinutes.value,
+        breakMinutes: breakMinutes.value,
+      }
+      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(data))
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function saveStats() {
+    try {
+      const data: StoredStats = {
+        date: statsDate.value,
+        completed: todayCompleted.value,
+      }
+      localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(data))
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  watch(
+    [workMinutes, breakMinutes],
+    () => {
+      saveSettings()
+      if (!isRunning.value && !isFinished.value) {
+        if (mode.value === 'work') {
+          remainingSeconds.value = workDurationSeconds.value
+          startRemaining = workDurationSeconds.value
+        } else {
+          remainingSeconds.value = breakDurationSeconds.value
+          startRemaining = breakDurationSeconds.value
+        }
+      }
+    },
+  )
 
   const formattedTime = computed(() => {
     const minutes = Math.floor(remainingSeconds.value / 60)
@@ -36,6 +152,7 @@ export const useTimerStore = defineStore('timer', () => {
 
   function start() {
     if (isRunning.value) return
+    ensureTodayStats()
     isRunning.value = true
     isFinished.value = false
     startTimestamp = Date.now()
@@ -57,8 +174,8 @@ export const useTimerStore = defineStore('timer', () => {
     pause()
     isFinished.value = false
     mode.value = 'work'
-    remainingSeconds.value = WORK_DURATION
-    startRemaining = WORK_DURATION
+    remainingSeconds.value = workDurationSeconds.value
+    startRemaining = workDurationSeconds.value
     startTimestamp = null
   }
 
@@ -66,18 +183,29 @@ export const useTimerStore = defineStore('timer', () => {
     pause()
     isFinished.value = true
     if (mode.value === 'work') {
+      ensureTodayStats()
+      todayCompleted.value += 1
+      saveStats()
       mode.value = 'break'
-      remainingSeconds.value = BREAK_DURATION
-      startRemaining = BREAK_DURATION
+      remainingSeconds.value = breakDurationSeconds.value
+      startRemaining = breakDurationSeconds.value
     } else {
       mode.value = 'work'
-      remainingSeconds.value = WORK_DURATION
-      startRemaining = WORK_DURATION
+      remainingSeconds.value = workDurationSeconds.value
+      startRemaining = workDurationSeconds.value
     }
   }
 
   function dismissFinished() {
     isFinished.value = false
+  }
+
+  function setWorkMinutes(v: number) {
+    workMinutes.value = clampMinutes(v)
+  }
+
+  function setBreakMinutes(v: number) {
+    breakMinutes.value = clampMinutes(v)
   }
 
   return {
@@ -87,9 +215,14 @@ export const useTimerStore = defineStore('timer', () => {
     isFinished,
     formattedTime,
     modeLabel,
+    workMinutes,
+    breakMinutes,
+    todayCompleted,
     start,
     pause,
     reset,
     dismissFinished,
+    setWorkMinutes,
+    setBreakMinutes,
   }
 })

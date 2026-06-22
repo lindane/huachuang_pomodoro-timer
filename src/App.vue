@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import TimerDisplay from './components/TimerDisplay.vue'
+import PomodoroStats from './components/PomodoroStats.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import { useTimerStore } from './stores/timerStore'
 
 const timer = useTimerStore()
@@ -7,6 +9,7 @@ const timer = useTimerStore()
 
 <template>
   <div class="app">
+    <SettingsPanel />
     <h1 class="title">番茄钟</h1>
     <TimerDisplay />
     <div class="controls">
@@ -28,11 +31,13 @@ const timer = useTimerStore()
         重置
       </button>
     </div>
+    <PomodoroStats />
   </div>
 </template>
 
 <style scoped>
 .app {
+  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
