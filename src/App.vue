@@ -1,15 +1,56 @@
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import TimerDisplay from './components/TimerDisplay.vue'
 import PomodoroStats from './components/PomodoroStats.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { useTimerStore } from './stores/timerStore'
 
 const timer = useTimerStore()
+const settingsPanelRef = ref<InstanceType<typeof SettingsPanel> | null>(null)
+
+function isInputTarget(e: KeyboardEvent): boolean {
+  const target = e.target as HTMLElement | null
+  if (!target) return false
+  const tag = target.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || target.isContentEditable
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (isInputTarget(e)) return
+  if (e.key === 'Escape') {
+    if (settingsPanelRef.value?.isOpen) {
+      settingsPanelRef.value.close()
+      e.preventDefault()
+    }
+    return
+  }
+  if (e.code === 'Space' || e.key === ' ') {
+    e.preventDefault()
+    if (timer.isRunning) {
+      timer.pause()
+    } else {
+      timer.start()
+    }
+    return
+  }
+  if (e.key.toLowerCase() === 'r') {
+    e.preventDefault()
+    timer.reset()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <template>
   <div class="app">
-    <SettingsPanel />
+    <SettingsPanel ref="settingsPanelRef" />
     <h1 class="title">番茄钟</h1>
     <TimerDisplay />
     <div class="controls">

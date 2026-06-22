@@ -83,6 +83,60 @@ export const useTimerStore = defineStore('timer', () => {
   let startTimestamp: number | null = null
   let startRemaining: number = 0
 
+  let audioCtx: AudioContext | null = null
+
+  function getAudioCtx(): AudioContext | null {
+    if (typeof window === 'undefined') return null
+    if (!audioCtx) {
+      try {
+        const AC =
+          (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext })
+            .AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (AC) audioCtx = new AC()
+      } catch (_) {
+        return null
+      }
+    }
+    return audioCtx
+  }
+
+  function playBeep(startTime: number, freq: number, duration: number, volume: number) {
+    const ctx = getAudioCtx()
+    if (!ctx) return
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(0, startTime)
+    gain.gain.linearRampToValueAtTime(volume, startTime + 0.01)
+    gain.gain.linearRampToValueAtTime(0, startTime + duration)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(startTime)
+    osc.stop(startTime + duration + 0.02)
+  }
+
+  function playFinishSound() {
+    const ctx = getAudioCtx()
+    if (!ctx) return
+    if (ctx.state === 'suspended') {
+      try {
+        ctx.resume()
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    const now = ctx.currentTime
+    const beepDur = 0.15
+    const gap = 0.1
+    const freq = 880
+    const vol = 0.25
+    playBeep(now, freq, beepDur, vol)
+    playBeep(now + beepDur + gap, freq, beepDur, vol)
+    playBeep(now + (beepDur + gap) * 2, freq, beepDur, vol)
+  }
+
   function ensureTodayStats() {
     const today = getTodayStr()
     if (statsDate.value !== today) {
@@ -182,6 +236,7 @@ export const useTimerStore = defineStore('timer', () => {
   function onTimerEnd() {
     pause()
     isFinished.value = true
+    playFinishSound()
     if (mode.value === 'work') {
       ensureTodayStats()
       todayCompleted.value += 1

@@ -48,6 +48,12 @@ function onBreakInput(e: Event) {
   const val = Number((e.target as HTMLInputElement).value)
   if (!Number.isNaN(val)) timer.setBreakMinutes(val)
 }
+
+function close() {
+  isOpen.value = false
+}
+
+defineExpose({ close, isOpen })
 </script>
 
 <template>
